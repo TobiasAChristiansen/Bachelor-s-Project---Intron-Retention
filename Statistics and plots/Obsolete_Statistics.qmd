@@ -1,0 +1,240 @@
+---
+title: "Intron retention project - statistics"
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-expand: true
+    html-math-method: katex
+    css: styles.css
+    embed-resources: true
+editor: visual
+---
+
+Loading the tidyverse library
+
+```{R}
+#| warning: false
+#| error: false
+#| output: false
+library("tidyverse")
+library("ggsignif")
+```
+
+\
+\
+
+## Data wrangling
+
+In this section, the data is loaded and wrangled to fit the purposes of the analyses.
+
+\
+
+##### Reading the data
+
+```{R}
+#| warning: false
+#| error: false
+#| output: false
+#Reading the data from the tsv file
+data <- paste0(getwd(), "/breg22_tsv_moreinfo.tsv") |>
+    read_tsv(col_names = FALSE)
+
+
+#Adding column names
+true_colnames <- c("Diagnosis", "ID", "Brain_region", "IR_variant", "Expression", "Sex")
+colnames(data) <- true_colnames
+
+
+```
+
+\
+\
+
+##### Pivoting wider
+
+```{R}
+#| warning: false
+#| error: false
+#Now, we will create a variant of the data that is pivoted wider.
+#The column we will pivot wider is the IR_variant column.
+#We will only use unique values of ID + Brain_region + IR_variant.
+#We will use the expression column as the values, but first we will hange them to 1 for present.
+
+
+wide_data <- data |>                                                            #Starting point
+    distinct(ID, Brain_region, IR_variant, .keep_all = TRUE) |>                 #Getting nique observations
+    mutate(Expression = 1) |>                                                   #Changing the expression column to 1
+    pivot_wider(names_from = IR_variant, values_from = Expression)              #Pivoting wider
+
+#Printing the results
+wide_data |>
+  head(10) |>
+  print()
+```
+
+\
+\
+\
+\
+\
+
+## Summary statistics
+
+\
+##### Age distributions
+```{R}
+#| output: false
+#| echo: false
+age_data <- 
+    "BREG22_ages_IRvariants.csv" |> 
+    read.csv(header = TRUE, sep = ",", dec = ".")
+
+```
+Plotting a boxplot of the age distributions
+
+```{R}
+#| warning: false
+#| error: false
+#| echo: false
+print(age_data)
+age_data |>
+    arrange(Diagnosis) |>
+    ggplot(aes(y = Age, x = Diagnosis, fill = Diagnosis)) +
+    geom_boxplot(outliers = FALSE) +
+    labs(title = "Age distribution",
+         subtitle = "Boxplot - Stratified by diagnosis",
+         x = "Diagnosis",
+         y = "Age") +
+    geom_signif(map_signif_level = function(p) sprintf(paste0("p = %.2g", ifelse(p <= 0.05, " *", "")), p),
+                comparisons = list(
+                    c("CTRL", "MSA"),
+                    c("CTRL", "PSP"),
+                    c("CTRL", "PD"),
+                    c("MSA", "PSP"),
+                    c("MSA", "PD"),
+                    c("PSP", "PD")),
+                step_increase = 0.1) +
+    theme_minimal() +
+    theme(panel.border = element_rect(colour = "black", fill=NA),
+          legend.background = element_rect(linetype = 1, size = 0.5, colour = 1))
+
+```
+
+\
+
+##### Counts and mean counts by group
+
+Counts for each disease group
+
+```{R}
+#| warning: false
+#| error: false
+counts_groups <- 
+    data |>                                                       #Starting point
+    select(ID, Diagnosis, Brain_region, IR_variant) |>            #Selecting the columns we want to use
+    distinct() |>                                                 #Getting unique observations (Only 1 count per IR_variant per patient)
+    group_by(Diagnosis, Brain_region) |>                          #Grouping by Diagnosis, Brain_region and IR_variant
+    summarise(count = n()) |>                                     #Counting the number of observations
+    pivot_wider(names_from = Brain_region, values_from = count)   #Pivoting wider
+print(counts_groups)
+```
+
+\
+\
+
+Mean counts for each patient across disease groups
+
+```{R}
+#| warning: false
+#| error: false
+mean_counts_groups <-
+    data |>                                                           #Starting point
+    select(ID, Diagnosis, Brain_region, IR_variant) |>                #Selecting the columns we want to use
+    distinct() |>                                                     #Getting unique observations (Only 1 count per IR_variant per patient)
+    group_by(ID, Diagnosis, Brain_region) |>                          #Grouping by Diagnosis, Brain_region and IR_variant
+    summarise(Counts = n()) |>                                        #Counts IR_variants
+    pivot_wider(names_from = Brain_region, values_from = Counts) |>   #Pivoting wider
+    group_by(Diagnosis) |>                                            #Grouping by Diagnosis
+    select(-ID) |>                                                    #Removing the ID column
+    summarise(across(where(is.numeric), mean, na.rm = TRUE))          #Calculating the mean of the numeric columns
+print(mean_counts_groups)
+```
+
+\
+\
+
+##### Counts per patient
+
+Determining the counts per patient
+
+```{R}
+#| warning: false
+#| error: false
+counts_patients <- data |>                                        #Starting point
+    select(ID, Diagnosis, Brain_region, IR_variant) |>            #Selecting the columns we want to use
+    distinct() |>                                                 #Getting unique observations (Only 1 count per IR_variant per patient)
+    group_by(ID, Diagnosis, Brain_region) |>                      #Grouping by Diagnosis, Brain_region and IR_variant
+    summarise(count = n()) |>                                     #Counting the number of observations
+    ungroup()
+print(counts_patients)
+```
+
+\
+\
+
+Plotting the data as a boxplot
+
+```{R}
+#| warning: false
+#| error: false
+#| echo: false
+counts_patients |>
+    ggplot(aes(y = count, x = Diagnosis, fill = Diagnosis)) +
+    geom_boxplot(outliers = FALSE) +
+    facet_wrap(~Brain_region) +
+    labs(title = "IR variants for patients in different disease groups",
+         subtitle = "Boxplot - stratified by brain regions",
+         x = "Disease group",
+         y = "Intron retention variants") +
+         ylim(75, 350) +
+    geom_signif(map_signif_level = function(p) sprintf(paste0("p = %.2g", ifelse(p <= 0.05, " *", "")), p),
+                comparisons = list(
+                    c("CTRL", "MSA"),
+                    c("CTRL", "PD"),
+                    c("CTRL", "PSP"),
+                    c("MSA", "PD"),
+                    c("MSA", "PSP"),
+                    c("PD", "PSP")),
+                step_increase = 0.22) +
+    theme_minimal() +
+    theme(axis.text.x=element_text(size=8), 
+          axis.ticks.x=element_blank(),
+          panel.border = element_rect(colour = "black", fill=NA),
+          legend.background = element_rect(linetype = 1, size = 0.5, colour = 1),
+          legend.text=element_text(size=12, face = "bold"),
+          legend.title = element_text(size=12, face = "bold"),
+          legend.key.size = unit(0.9, 'cm'),
+          plot.title = element_text(size=18, face = "bold"),
+          plot.subtitle = element_text(size=14),
+          axis.title=element_text(size=12,face="bold"))
+```
+
+
+```{R}
+#| warning: false
+#| error: false
+data |>
+    arrange(Diagnosis) |>
+    ggplot(aes(x = ID, y = IR_variant)) +
+    geom_tile() +
+    facet_wrap(~Brain_region) +
+    scale_x_discrete() +
+    theme_minimal() +
+    theme(panel.border = element_rect(colour = "black", fill=NA),
+          legend.background = element_rect(linetype = 1, size = 0.5, colour = 1)) +
+    labs(title = "Prescence of IR variants",
+         x = "ID",
+         y = "Intron retention variant")
+    
+```
